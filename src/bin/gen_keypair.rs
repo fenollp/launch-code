@@ -12,8 +12,11 @@ pub fn main() {
             launch_code::gen_keypair(&Path::new(pk), &Path::new(sk));
         }
         _ => {
-            writeln!(&mut io::stderr(),
-                "Usage: gen_keypair <public key filename> <secret key filename>").unwrap();
+            writeln!(
+                &mut io::stderr(),
+                "Usage: gen_keypair <public key filename> <secret key filename>"
+            )
+            .unwrap();
             os::set_exit_status(1);
         }
     }
