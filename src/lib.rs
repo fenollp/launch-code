@@ -1,23 +1,25 @@
-#![crate_type="dylib"]
+#![crate_type = "dylib"]
 #![feature(plugin_registrar)]
 #![deny(warnings)]
 #![allow(unstable)]
 
-extern crate syntax;
 extern crate sodiumoxide;
-#[macro_use] extern crate rustc;
+extern crate syntax;
+#[macro_use]
+extern crate rustc;
 
-use std::borrow::ToOwned;
-use std::io::File;
-use syntax::ast;
-use syntax::visit;
-use syntax::attr::AttrMetaMethods;
-use syntax::codemap::Span;
-use rustc::lint::{Context, LintPass, LintPassObject, LintArray};
+use rustc::lint::{Context, LintArray, LintPass, LintPassObject};
 use rustc::plugin::Registry;
 use rustc::session::Session;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::sign::{PublicKey, SecretKey};
+use std::borrow::ToOwned;
+use std::io::File;
+use std::path::Path;
+use syntax::ast;
+use syntax::attr::AttrMetaMethods;
+use syntax::codemap::Span;
+use syntax::visit;
 
 use validator::Validator;
 
@@ -33,8 +35,13 @@ fn read_key(sess: &Session, buf: &mut [u8], filename: &str) {
     };
     match file.read(buf) {
         Ok(n) if n == buf.len() => (),
-        r => sess.err(format!("could not read full key from key file {}: got {:?}",
-                filename, r).as_slice()),
+        r => sess.err(
+            format!(
+                "could not read full key from key file {}: got {:?}",
+                filename, r
+            )
+            .as_slice(),
+        ),
     }
 }
 
@@ -60,14 +67,16 @@ pub fn plugin_registrar(reg: &mut Registry) {
         let args = match reg.args().meta_item_list() {
             Some(args) => args,
             None => {
-                reg.sess.span_err(reg.args().span,
-                    r#"usage: #[plugin(public_key="filename", ...)]"#);
+                reg.sess.span_err(
+                    reg.args().span,
+                    r#"usage: #[plugin(public_key="filename", ...)]"#,
+                );
                 return;
             }
         };
 
         macro_rules! read_key {
-            ($attr:expr, $size:expr) => ({
+            ($attr:expr, $size:expr) => {{
                 let mut k = [0u8; $size];
                 if let Some(filename) = $attr.value_str() {
                     read_key(reg.sess, k.as_mut_slice(), filename.get());
@@ -75,7 +84,7 @@ pub fn plugin_registrar(reg: &mut Registry) {
                 } else {
                     None
                 }
-            });
+            }};
         }
 
         for attr in args.iter() {
@@ -91,7 +100,8 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
     let pubkey = match pubkey {
         None => {
-            reg.sess.span_err(reg.args().span, "public key must be specified");
+            reg.sess
+                .span_err(reg.args().span, "public key must be specified");
             return;
         }
         Some(k) => k,
@@ -110,7 +120,9 @@ pub fn plugin_registrar(reg: &mut Registry) {
 fn child_of(cx: &Context, child: ast::NodeId, parent: ast::NodeId) -> bool {
     let mut id = child;
     loop {
-        if id == parent { return true; }
+        if id == parent {
+            return true;
+        }
         match cx.tcx.map.get_parent(id) {
             i if i == id => return false, // no parent
             i => id = i,
@@ -130,7 +142,11 @@ fn snip(cx: &Context, span: Span) -> Vec<u8> {
 }
 
 declare_lint!(UNAUTHORIZED_UNSAFE, Warn, "unauthorized unsafe blocks");
-declare_lint!(WRONG_LAUNCH_CODE, Warn, "incorrect #[launch_code] attributes");
+declare_lint!(
+    WRONG_LAUNCH_CODE,
+    Warn,
+    "incorrect #[launch_code] attributes"
+);
 
 struct Pass {
     authenticated_parent: Option<ast::NodeId>,
@@ -150,17 +166,20 @@ impl Pass {
     }
 
     // Check a function's #[launch_code] attribute, if any.
-    fn authenticate(&mut self,
-                    cx: &Context,
-                    attrs: &[ast::Attribute],
-                    span: Span,
-                    id: ast::NodeId) {
+    fn authenticate(
+        &mut self,
+        cx: &Context,
+        attrs: &[ast::Attribute],
+        span: Span,
+        id: ast::NodeId,
+    ) {
         let mut launch_code = None;
         let mut val = Validator::new();
 
         for attr in attrs.iter() {
             if attr.check_name("launch_code") {
-                let value = attr.value_str()
+                let value = attr
+                    .value_str()
                     .map(|s| s.get().to_owned())
                     .unwrap_or_else(|| "".to_owned());
                 launch_code = Some((attr.span, value));
@@ -196,22 +215,22 @@ impl LintPass for Pass {
         lint_array!(UNAUTHORIZED_UNSAFE, WRONG_LAUNCH_CODE)
     }
 
-    fn check_block(&mut self,
-                   cx: &Context,
-                   block: &ast::Block) {
+    fn check_block(&mut self, cx: &Context, block: &ast::Block) {
         match block.rules {
             ast::DefaultBlock => (),
             ast::UnsafeBlock(..) => self.authorize(cx, block.span, block.id),
         }
     }
 
-    fn check_fn(&mut self,
-                cx: &Context,
-                fk: visit::FnKind,
-                _: &ast::FnDecl,
-                _: &ast::Block,
-                span: Span,
-                id: ast::NodeId) {
+    fn check_fn(
+        &mut self,
+        cx: &Context,
+        fk: visit::FnKind,
+        _: &ast::FnDecl,
+        _: &ast::Block,
+        span: Span,
+        id: ast::NodeId,
+    ) {
         if match fk {
             visit::FkItemFn(_, _, ast::Unsafety::Unsafe, _) => true,
             visit::FkItemFn(..) => false,
@@ -229,18 +248,18 @@ impl LintPass for Pass {
     }
 
     fn check_ty_method(&mut self, cx: &Context, m: &ast::TypeMethod) {
-        self.authenticate(cx, &m.attrs[], m.span, m.id);
+        self.authenticate(cx, &m.attrs, m.span, m.id);
     }
 
     fn check_trait_method(&mut self, cx: &Context, it: &ast::TraitItem) {
         match *it {
-            ast::RequiredMethod(ref m) => self.authenticate(cx, &m.attrs[], m.span, m.id),
-            ast::ProvidedMethod(ref m) => self.authenticate(cx, &m.attrs[], m.span, m.id),
+            ast::RequiredMethod(ref m) => self.authenticate(cx, &m.attrs, m.span, m.id),
+            ast::ProvidedMethod(ref m) => self.authenticate(cx, &m.attrs, m.span, m.id),
             ast::TypeTraitItem(..) => (),
         }
     }
 
     fn check_item(&mut self, cx: &Context, it: &ast::Item) {
-        self.authenticate(cx, &it.attrs[], it.span, it.id);
+        self.authenticate(cx, &it.attrs, it.span, it.id);
     }
 }

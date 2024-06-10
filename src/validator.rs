@@ -1,6 +1,6 @@
-use std::char;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::sign::{PublicKey, SecretKey, Signature};
+use std::char;
 
 fn to_braille(xs: &[u8]) -> String {
     xs.iter()
@@ -10,13 +10,22 @@ fn to_braille(xs: &[u8]) -> String {
 
 fn from_braille(xs: &str) -> Option<Vec<u8>> {
     let mut bogus = false;
-    let vec = xs.chars()
+    let vec = xs
+        .chars()
         .map(|c| match c as u32 {
-            n @ 0x2800 ... 0x28FF => (n - 0x2800) as u8,
-            _ => { bogus = true; 0 }
-        }).collect();
+            n @ 0x2800..=0x28FF => (n - 0x2800) as u8,
+            _ => {
+                bogus = true;
+                0
+            }
+        })
+        .collect();
 
-    if bogus { None } else { Some(vec) }
+    if bogus {
+        None
+    } else {
+        Some(vec)
+    }
 }
 
 /// A buffer that can sign or verify the accumulated data.
@@ -26,9 +35,7 @@ pub struct Validator {
 
 impl Validator {
     pub fn new() -> Validator {
-        Validator {
-            buf: vec![],
-        }
+        Validator { buf: vec![] }
     }
 
     /// Append a chunk of data to the buffer, along with its length.
